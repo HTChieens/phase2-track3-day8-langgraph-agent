@@ -1,0 +1,814 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LangGraph Pipeline Visualization</title>
+  <style>
+    :root {
+      --bg: #f6f7f9;
+      --panel: #ffffff;
+      --ink: #1f2933;
+      --muted: #697586;
+      --line: #d8dee8;
+      --accent: #2563eb;
+      --ok: #15803d;
+      --warn: #b45309;
+      --danger: #b91c1c;
+      --risk: #7c3aed;
+      --info: #0f766e;
+      --shadow: 0 10px 28px rgba(20, 30, 50, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.45;
+    }
+
+    header {
+      background: #101828;
+      color: #fff;
+      padding: 28px clamp(18px, 4vw, 48px);
+    }
+
+    header h1 {
+      margin: 0 0 8px;
+      font-size: clamp(28px, 4vw, 44px);
+      letter-spacing: 0;
+    }
+
+    header p {
+      max-width: 940px;
+      margin: 0;
+      color: #d0d5dd;
+      font-size: 16px;
+    }
+
+    main {
+      width: min(1280px, 100%);
+      margin: 0 auto;
+      padding: 24px clamp(14px, 3vw, 32px) 48px;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(140px, 1fr));
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+
+    .stat {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px 16px;
+      box-shadow: var(--shadow);
+    }
+
+    .stat span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .stat strong {
+      display: block;
+      margin-top: 4px;
+      font-size: 26px;
+      letter-spacing: 0;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1.35fr) minmax(340px, 0.65fr);
+      gap: 18px;
+      align-items: start;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+      padding: 16px;
+    }
+
+    .panel h2 {
+      margin: 0 0 12px;
+      font-size: 18px;
+      letter-spacing: 0;
+    }
+
+    .pipeline-wrap {
+      overflow-x: auto;
+    }
+
+    svg {
+      width: 100%;
+      min-width: 820px;
+      height: auto;
+      display: block;
+    }
+
+    .node rect {
+      fill: #fff;
+      stroke: #cfd7e3;
+      stroke-width: 1.4;
+      rx: 8;
+    }
+
+    .node text {
+      fill: var(--ink);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .node small {
+      color: var(--muted);
+    }
+
+    .edge {
+      fill: none;
+      stroke: #aab4c3;
+      stroke-width: 2;
+      marker-end: url(#arrow);
+    }
+
+    .edge.retry {
+      stroke-dasharray: 7 5;
+    }
+
+    .active rect {
+      stroke: var(--accent);
+      stroke-width: 3;
+      filter: drop-shadow(0 4px 10px rgba(37, 99, 235, 0.26));
+    }
+
+    .current rect {
+      fill: #eff6ff;
+      stroke: var(--accent);
+      stroke-width: 3.5;
+      filter: drop-shadow(0 6px 14px rgba(37, 99, 235, 0.32));
+    }
+
+    .done rect {
+      fill: #f0fdf4;
+      stroke: #86efac;
+    }
+
+    .active-edge {
+      stroke: var(--accent);
+      stroke-width: 3.5;
+    }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 5px 9px;
+      color: var(--muted);
+      background: #fff;
+      font-size: 13px;
+      white-space: nowrap;
+    }
+
+    .dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: var(--accent);
+    }
+
+    .dot.risky { background: var(--risk); }
+    .dot.error { background: var(--danger); }
+    .dot.tool { background: var(--info); }
+    .dot.ok { background: var(--ok); }
+
+    .scenario-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    button.scenario {
+      width: 100%;
+      text-align: left;
+      border: 1px solid var(--line);
+      background: #fff;
+      border-radius: 8px;
+      padding: 11px 12px;
+      color: var(--ink);
+      cursor: pointer;
+    }
+
+    button.scenario:hover,
+    button.scenario.selected {
+      border-color: var(--accent);
+      background: #eff6ff;
+    }
+
+    .scenario-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 4px;
+    }
+
+    .scenario-id {
+      font-weight: 800;
+    }
+
+    .badge {
+      border-radius: 999px;
+      padding: 3px 8px;
+      font-size: 12px;
+      font-weight: 700;
+      color: #fff;
+      background: var(--accent);
+      white-space: nowrap;
+    }
+
+    .badge.simple { background: var(--ok); }
+    .badge.tool { background: var(--info); }
+    .badge.missing_info { background: var(--warn); }
+    .badge.risky { background: var(--risk); }
+    .badge.error { background: var(--danger); }
+
+    .query {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .details {
+      margin-top: 14px;
+      border-top: 1px solid var(--line);
+      padding-top: 14px;
+    }
+
+    .details dl {
+      display: grid;
+      grid-template-columns: 120px 1fr;
+      gap: 8px 10px;
+      margin: 0;
+      font-size: 14px;
+    }
+
+    .details dt {
+      color: var(--muted);
+    }
+
+    .details dd {
+      margin: 0;
+      font-weight: 650;
+    }
+
+    .run-controls {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-top: 14px;
+    }
+
+    .run-controls button {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      color: var(--ink);
+      font-weight: 800;
+      padding: 9px 10px;
+      cursor: pointer;
+    }
+
+    .run-controls button.primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+
+    .speed {
+      margin-top: 12px;
+      display: grid;
+      gap: 6px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .speed input {
+      width: 100%;
+    }
+
+    .node-output {
+      margin-top: 14px;
+      border-top: 1px solid var(--line);
+      padding-top: 14px;
+    }
+
+    .output-list {
+      display: grid;
+      gap: 8px;
+      max-height: 390px;
+      overflow: auto;
+      padding-right: 4px;
+    }
+
+    .event {
+      border: 1px solid var(--line);
+      border-left: 4px solid var(--accent);
+      border-radius: 8px;
+      background: #fff;
+      padding: 10px;
+    }
+
+    .event strong {
+      display: block;
+      font-size: 13px;
+      margin-bottom: 4px;
+    }
+
+    .event code {
+      display: block;
+      white-space: pre-wrap;
+      color: var(--muted);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+
+    th,
+    td {
+      border-bottom: 1px solid var(--line);
+      padding: 10px 8px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      background: #f8fafc;
+    }
+
+    .status {
+      color: var(--ok);
+      font-weight: 800;
+    }
+
+    @media (max-width: 980px) {
+      .layout,
+      .stats {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>LangGraph Support Agent Pipeline</h1>
+    <p>Interactive view of the Day 08 workflow using the provided sample scenarios and latest metrics.</p>
+  </header>
+
+  <main>
+    <section class="stats" aria-label="Metrics summary">
+      <div class="stat"><span>Scenarios</span><strong>7</strong></div>
+      <div class="stat"><span>Success rate</span><strong>100%</strong></div>
+      <div class="stat"><span>Avg nodes</span><strong>6.43</strong></div>
+      <div class="stat"><span>Retries</span><strong>3</strong></div>
+      <div class="stat"><span>Approvals</span><strong>2</strong></div>
+    </section>
+
+    <section class="layout">
+      <div class="panel">
+        <h2>Pipeline</h2>
+        <div class="pipeline-wrap">
+          <svg viewBox="0 0 920 560" role="img" aria-label="LangGraph workflow diagram">
+            <defs>
+              <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="#aab4c3"></path>
+              </marker>
+            </defs>
+
+            <path id="e-start-intake" class="edge" d="M70 70 H150"></path>
+            <path id="e-intake-classify" class="edge" d="M250 70 H330"></path>
+            <path id="e-classify-answer" class="edge" d="M430 70 H530"></path>
+            <path id="e-answer-finalize" class="edge" d="M630 70 H740"></path>
+
+            <path id="e-classify-tool" class="edge" d="M380 100 V175 H530"></path>
+            <path id="e-tool-evaluate" class="edge" d="M630 175 H740"></path>
+            <path id="e-evaluate-answer" class="edge" d="M790 145 V100 H580"></path>
+            <path id="e-classify-retry" class="edge retry" d="M380 100 V300 H530"></path>
+            <path id="e-evaluate-retry" class="edge retry" d="M790 205 V285 H610"></path>
+            <path id="e-retry-tool" class="edge retry" d="M530 285 H470 V175 H530"></path>
+            <path id="e-retry-dead" class="edge" d="M610 315 H740"></path>
+            <path id="e-dead-finalize" class="edge" d="M790 345 V400 H790 V100"></path>
+
+            <path id="e-classify-clarify" class="edge" d="M380 100 V455 H530"></path>
+            <path id="e-clarify-finalize" class="edge" d="M630 455 H790 V100"></path>
+
+            <path id="e-classify-risky" class="edge" d="M380 100 V350 H150"></path>
+            <path id="e-risky-approval" class="edge" d="M250 350 H330"></path>
+            <path id="e-approval-tool" class="edge" d="M430 350 H470 V175 H530"></path>
+            <path id="e-approval-clarify" class="edge" d="M380 380 V455 H530"></path>
+
+            <g id="n-start" class="node">
+              <rect x="20" y="45" width="90" height="50"></rect>
+              <text x="65" y="75" text-anchor="middle">START</text>
+            </g>
+            <g id="n-intake" class="node">
+              <rect x="150" y="45" width="100" height="50"></rect>
+              <text x="200" y="75" text-anchor="middle">intake</text>
+            </g>
+            <g id="n-classify" class="node">
+              <rect x="330" y="45" width="100" height="50"></rect>
+              <text x="380" y="75" text-anchor="middle">classify</text>
+            </g>
+            <g id="n-answer" class="node">
+              <rect x="530" y="45" width="100" height="50"></rect>
+              <text x="580" y="75" text-anchor="middle">answer</text>
+            </g>
+            <g id="n-finalize" class="node">
+              <rect x="740" y="45" width="100" height="50"></rect>
+              <text x="790" y="75" text-anchor="middle">finalize</text>
+            </g>
+            <g id="n-tool" class="node">
+              <rect x="530" y="150" width="100" height="50"></rect>
+              <text x="580" y="180" text-anchor="middle">tool</text>
+            </g>
+            <g id="n-evaluate" class="node">
+              <rect x="740" y="150" width="100" height="50"></rect>
+              <text x="790" y="180" text-anchor="middle">evaluate</text>
+            </g>
+            <g id="n-retry" class="node">
+              <rect x="530" y="275" width="100" height="50"></rect>
+              <text x="580" y="305" text-anchor="middle">retry</text>
+            </g>
+            <g id="n-dead_letter" class="node">
+              <rect x="740" y="320" width="100" height="50"></rect>
+              <text x="790" y="350" text-anchor="middle">dead_letter</text>
+            </g>
+            <g id="n-risky_action" class="node">
+              <rect x="150" y="325" width="100" height="50"></rect>
+              <text x="200" y="355" text-anchor="middle">risky_action</text>
+            </g>
+            <g id="n-approval" class="node">
+              <rect x="330" y="325" width="100" height="50"></rect>
+              <text x="380" y="355" text-anchor="middle">approval</text>
+            </g>
+            <g id="n-clarify" class="node">
+              <rect x="530" y="430" width="100" height="50"></rect>
+              <text x="580" y="460" text-anchor="middle">clarify</text>
+            </g>
+          </svg>
+        </div>
+        <div class="legend">
+          <span class="chip"><span class="dot ok"></span>simple</span>
+          <span class="chip"><span class="dot tool"></span>tool</span>
+          <span class="chip"><span class="dot"></span>missing info</span>
+          <span class="chip"><span class="dot risky"></span>risky/HITL</span>
+          <span class="chip"><span class="dot error"></span>error/retry</span>
+        </div>
+      </div>
+
+      <aside class="panel">
+        <h2>Dataset scenarios</h2>
+        <div id="scenario-list" class="scenario-list"></div>
+        <div class="run-controls">
+          <button id="run-btn" class="primary" type="button">Run</button>
+          <button id="step-btn" type="button">Step</button>
+          <button id="reset-btn" type="button">Reset</button>
+        </div>
+        <label class="speed">
+          Simulation speed
+          <input id="speed" type="range" min="250" max="1600" step="50" value="850">
+        </label>
+        <div class="details">
+          <h2>Selected run</h2>
+          <dl>
+            <dt>Scenario</dt><dd id="d-id">S01_simple</dd>
+            <dt>Route</dt><dd id="d-route">simple</dd>
+            <dt>Nodes visited</dt><dd id="d-nodes">4</dd>
+            <dt>Retries</dt><dd id="d-retries">0</dd>
+            <dt>Approval</dt><dd id="d-approval">not required</dd>
+            <dt>Status</dt><dd id="d-status" class="status">success</dd>
+          </dl>
+        </div>
+        <div class="node-output">
+          <h2>Node outputs</h2>
+          <div id="output-list" class="output-list"></div>
+        </div>
+      </aside>
+    </section>
+
+    <section class="panel" style="margin-top:18px">
+      <h2>Scenario metrics</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Scenario</th>
+            <th>Query</th>
+            <th>Expected</th>
+            <th>Actual</th>
+            <th>Nodes</th>
+            <th>Retries</th>
+            <th>Approval</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody id="metrics-body"></tbody>
+      </table>
+    </section>
+  </main>
+
+  <script>
+    const scenarios = [
+      { id: "S01_simple", query: "How do I reset my password?", route: "simple", nodes: 4, retries: 0, approval: false, approvalObserved: false, success: true },
+      { id: "S02_tool", query: "Please lookup order status for order 12345", route: "tool", nodes: 6, retries: 0, approval: false, approvalObserved: false, success: true },
+      { id: "S03_missing", query: "Can you fix it?", route: "missing_info", nodes: 4, retries: 0, approval: false, approvalObserved: false, success: true },
+      { id: "S04_risky", query: "Refund this customer and send confirmation email", route: "risky", nodes: 8, retries: 0, approval: true, approvalObserved: true, success: true },
+      { id: "S05_error", query: "Timeout failure while processing request", route: "error", nodes: 10, retries: 2, approval: false, approvalObserved: false, success: true },
+      { id: "S06_delete", query: "Delete customer account after support verification", route: "risky", nodes: 8, retries: 0, approval: true, approvalObserved: true, success: true },
+      { id: "S07_dead_letter", query: "System failure cannot recover after multiple attempts", route: "error", nodes: 5, retries: 1, approval: false, approvalObserved: false, success: true, deadLetter: true }
+    ];
+
+    const list = document.querySelector("#scenario-list");
+    const body = document.querySelector("#metrics-body");
+    const outputList = document.querySelector("#output-list");
+    const runButton = document.querySelector("#run-btn");
+    const stepButton = document.querySelector("#step-btn");
+    const resetButton = document.querySelector("#reset-btn");
+    const speedInput = document.querySelector("#speed");
+
+    let selectedId = "S01_simple";
+    let stepIndex = 0;
+    let isRunning = false;
+    let runToken = 0;
+
+    function approvalText(item) {
+      if (!item.approval) return "not required";
+      return item.approvalObserved ? "observed" : "missing";
+    }
+
+    function routeLabel(item) {
+      return item.deadLetter ? "error -> dead_letter" : item.route;
+    }
+
+    function getScenario(id = selectedId) {
+      return scenarios.find(item => item.id === id) || scenarios[0];
+    }
+
+    function nodeOutput(node, item, occurrence = 1) {
+      const base = {
+        start: `thread_id=thread-${item.id}`,
+        intake: `query="${item.query}"\nmessages += ["intake:${item.query.slice(0, 40)}"]`,
+        classify: `route="${item.route}"\nrisk_level="${item.route === "risky" ? "high" : "low"}"`,
+        clarify: `pending_question="Could you provide the specific account, order, issue details, and action?"\nfinal_answer=pending_question`,
+        risky_action: `proposed_action="Review requested action: ${item.query}"`,
+        approval: `approval={ approved: true, reviewer: "mock-reviewer" }`,
+        answer: `final_answer generated from query, tool_results, and approval context`,
+        finalize: `events += [{ node: "finalize", event_type: "completed" }]`
+      };
+
+      if (node === "retry") {
+        return `attempt=${occurrence}\nerrors += ["Attempt ${occurrence} scheduled after failure"]`;
+      }
+      if (node === "tool" && item.route === "tool") {
+        return `tool_results += ["Lookup result for order/status request"]`;
+      }
+      if (node === "tool" && item.route === "risky") {
+        return `tool_results += ["Risky action completed after approval"]`;
+      }
+      if (node === "tool" && item.route === "error" && occurrence === 1 && !item.deadLetter) {
+        return `tool_results += ["ERROR: transient tool failure while processing request"]`;
+      }
+      if (node === "tool" && item.route === "error") {
+        return `tool_results += ["Tool processed request successfully after retry"]`;
+      }
+      if (node === "evaluate" && item.route === "error" && occurrence === 1 && !item.deadLetter) {
+        return `evaluation_result="needs_retry"`;
+      }
+      if (node === "evaluate") {
+        return `evaluation_result="success"`;
+      }
+      if (node === "dead_letter") {
+        return `final_answer="Request moved to manual review after max retries"\nroute="error"`;
+      }
+      return base[node] || "state updated";
+    }
+
+    function stepsFor(item) {
+      const common = [
+        { node: "start", title: "START", edge: null },
+        { node: "intake", title: "intake_node", edge: "start-intake" },
+        { node: "classify", title: "classify_node", edge: "intake-classify" }
+      ];
+
+      if (item.route === "simple") {
+        return [
+          ...common,
+          { node: "answer", title: "answer_node", edge: "classify-answer" },
+          { node: "finalize", title: "finalize_node", edge: "answer-finalize" }
+        ];
+      }
+      if (item.route === "tool") {
+        return [
+          ...common,
+          { node: "tool", title: "tool_node", edge: "classify-tool" },
+          { node: "evaluate", title: "evaluate_node", edge: "tool-evaluate" },
+          { node: "answer", title: "answer_node", edge: "evaluate-answer" },
+          { node: "finalize", title: "finalize_node", edge: "answer-finalize" }
+        ];
+      }
+      if (item.route === "missing_info") {
+        return [
+          ...common,
+          { node: "clarify", title: "ask_clarification_node", edge: "classify-clarify" },
+          { node: "finalize", title: "finalize_node", edge: "clarify-finalize" }
+        ];
+      }
+      if (item.route === "risky") {
+        return [
+          ...common,
+          { node: "risky_action", title: "risky_action_node", edge: "classify-risky" },
+          { node: "approval", title: "approval_node", edge: "risky-approval" },
+          { node: "tool", title: "tool_node", edge: "approval-tool" },
+          { node: "evaluate", title: "evaluate_node", edge: "tool-evaluate" },
+          { node: "answer", title: "answer_node", edge: "evaluate-answer" },
+          { node: "finalize", title: "finalize_node", edge: "answer-finalize" }
+        ];
+      }
+      if (item.deadLetter) {
+        return [
+          ...common,
+          { node: "retry", title: "retry_or_fallback_node", edge: "classify-retry", occurrence: 1 },
+          { node: "dead_letter", title: "dead_letter_node", edge: "retry-dead" },
+          { node: "finalize", title: "finalize_node", edge: "dead-finalize" }
+        ];
+      }
+      return [
+        ...common,
+        { node: "retry", title: "retry_or_fallback_node", edge: "classify-retry", occurrence: 1 },
+        { node: "tool", title: "tool_node", edge: "retry-tool", occurrence: 1 },
+        { node: "evaluate", title: "evaluate_node", edge: "tool-evaluate", occurrence: 1 },
+        { node: "retry", title: "retry_or_fallback_node", edge: "evaluate-retry", occurrence: 2 },
+        { node: "tool", title: "tool_node", edge: "retry-tool", occurrence: 2 },
+        { node: "evaluate", title: "evaluate_node", edge: "tool-evaluate", occurrence: 2 },
+        { node: "answer", title: "answer_node", edge: "evaluate-answer" },
+        { node: "finalize", title: "finalize_node", edge: "answer-finalize" }
+      ];
+    }
+
+    function renderScenarioList() {
+      list.innerHTML = scenarios.map((item, index) => `
+        <button class="scenario ${index === 0 ? "selected" : ""}" data-id="${item.id}">
+          <span class="scenario-top">
+            <span class="scenario-id">${item.id}</span>
+            <span class="badge ${item.route}">${routeLabel(item)}</span>
+          </span>
+          <span class="query">${item.query}</span>
+        </button>
+      `).join("");
+    }
+
+    function renderTable() {
+      body.innerHTML = scenarios.map(item => `
+        <tr>
+          <td><strong>${item.id}</strong></td>
+          <td>${item.query}</td>
+          <td>${item.route}</td>
+          <td>${routeLabel(item)}</td>
+          <td>${item.nodes}</td>
+          <td>${item.retries}</td>
+          <td>${approvalText(item)}</td>
+          <td class="status">${item.success ? "success" : "failed"}</td>
+        </tr>
+      `).join("");
+    }
+
+    function clearHighlights() {
+      document.querySelectorAll(".node").forEach(node => node.classList.remove("active", "current", "done"));
+      document.querySelectorAll(".edge").forEach(edge => edge.classList.remove("active-edge"));
+    }
+
+    function updateDetails(item, status = "ready") {
+      document.querySelector("#d-id").textContent = item.id;
+      document.querySelector("#d-route").textContent = routeLabel(item);
+      document.querySelector("#d-nodes").textContent = item.nodes;
+      document.querySelector("#d-retries").textContent = item.retries;
+      document.querySelector("#d-approval").textContent = approvalText(item);
+      document.querySelector("#d-status").textContent = status;
+    }
+
+    function appendOutput(step, item) {
+      const event = document.createElement("div");
+      event.className = "event";
+      event.innerHTML = `
+        <strong>${String(stepIndex).padStart(2, "0")} · ${step.title}</strong>
+        <code>${nodeOutput(step.node, item, step.occurrence || 1)}</code>
+      `;
+      outputList.appendChild(event);
+      outputList.scrollTop = outputList.scrollHeight;
+    }
+
+    function runStep() {
+      const item = getScenario();
+      const steps = stepsFor(item);
+      if (stepIndex >= steps.length) {
+        updateDetails(item, "success");
+        return false;
+      }
+
+      const step = steps[stepIndex];
+      document.querySelectorAll(".node").forEach(node => node.classList.remove("current"));
+      document.querySelector(`#n-${step.node}`)?.classList.add("current", "active");
+      if (step.edge) {
+        document.querySelector(`#e-${step.edge}`)?.classList.add("active-edge");
+      }
+      appendOutput(step, item);
+      document.querySelector(`#n-${step.node}`)?.classList.add("done");
+
+      stepIndex += 1;
+      updateDetails(item, stepIndex >= steps.length ? "success" : "running");
+      return stepIndex < steps.length;
+    }
+
+    function resetRun(keepSelection = true) {
+      runToken += 1;
+      isRunning = false;
+      runButton.textContent = "Run";
+      stepIndex = 0;
+      clearHighlights();
+      outputList.innerHTML = "";
+      const item = getScenario();
+      updateDetails(item, keepSelection ? "ready" : "ready");
+      document.querySelector("#n-start")?.classList.add("current");
+    }
+
+    async function runSimulation() {
+      if (isRunning) return;
+      isRunning = true;
+      runButton.textContent = "Running";
+      const token = ++runToken;
+
+      if (stepIndex === 0 && outputList.children.length === 0) {
+        clearHighlights();
+      }
+
+      while (isRunning && token === runToken) {
+        const hasMore = runStep();
+        if (!hasMore) break;
+        await new Promise(resolve => setTimeout(resolve, Number(speedInput.value)));
+      }
+
+      isRunning = false;
+      runButton.textContent = "Run";
+    }
+
+    function selectScenario(id) {
+      selectedId = id;
+      document.querySelectorAll("button.scenario").forEach(button => {
+        button.classList.toggle("selected", button.dataset.id === id);
+      });
+      resetRun();
+    }
+
+    renderScenarioList();
+    renderTable();
+    list.addEventListener("click", event => {
+      const button = event.target.closest("button.scenario");
+      if (button) selectScenario(button.dataset.id);
+    });
+    runButton.addEventListener("click", runSimulation);
+    stepButton.addEventListener("click", () => {
+      isRunning = false;
+      runButton.textContent = "Run";
+      runStep();
+    });
+    resetButton.addEventListener("click", () => resetRun());
+    resetRun();
+  </script>
+</body>
+</html>

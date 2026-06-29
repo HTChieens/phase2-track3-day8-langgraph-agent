@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Annotated
+from uuid import uuid4
 
 import typer
 import yaml
@@ -19,6 +20,19 @@ from .state import initial_state
 app = typer.Typer(no_args_is_help=True)
 
 
+def _state_history_available(graph: object, thread_ids: list[str]) -> bool:
+    """Verify checkpointer-backed state history exists for every scenario run."""
+    get_state_history = getattr(graph, "get_state_history", None)
+    if not callable(get_state_history):
+        return False
+
+    for thread_id in thread_ids:
+        history = list(get_state_history({"configurable": {"thread_id": thread_id}}))
+        if not history:
+            return False
+    return True
+
+
 @app.command("run-scenarios")
 def run_scenarios(
     config: Annotated[Path, typer.Option("--config")],
@@ -30,12 +44,17 @@ def run_scenarios(
     checkpointer = build_checkpointer(cfg.get("checkpointer", "memory"), cfg.get("database_url"))
     graph = build_graph(checkpointer=checkpointer)
     metrics = []
+    thread_ids = []
+    run_id = uuid4().hex[:8]
     for scenario in scenarios:
         state = initial_state(scenario)
+        state["thread_id"] = f"{state['thread_id']}-{run_id}"
         run_config = {"configurable": {"thread_id": state["thread_id"]}}
         final_state = graph.invoke(state, config=run_config)
+        thread_ids.append(state["thread_id"])
         metrics.append(metric_from_state(final_state, scenario.expected_route.value, scenario.requires_approval))
     report = summarize_metrics(metrics)
+    report.resume_success = _state_history_available(graph, thread_ids)
     write_metrics(report, output)
     if cfg.get("report_path"):
         write_report(report, cfg["report_path"])

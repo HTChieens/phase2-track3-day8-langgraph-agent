@@ -2,9 +2,9 @@
 
 ## 1. Team / student
 
-- Name:
-- Repo/commit:
-- Date:
+- Name: Hoàng Thanh Chiến
+- Repo/commit: https://github.com/HTChieens/phase2-track3-day8-langgraph-agent
+- Date: 29/06/2026
 
 ## 2. Architecture
 
